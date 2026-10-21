@@ -150,6 +150,7 @@ const ICONS = {
   plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  clockOff: '<path d="M12 6v6l2 1"/><path d="M5.3 5.3A10 10 0 0 0 18.7 18.7"/><path d="M8.6 2.6A10 10 0 0 1 21.4 15.4"/><path d="m2 2 20 20"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
   bellOff: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/>',
@@ -169,6 +170,31 @@ S ||= { plan: {
   5: [session('Pull', '07:00', [act('Pull-ups','4 × max'), act('Barbell row','4 × 8'), act('Bicep curls','3 × 12')])],
 }, done: {}, notified: {} };
 const save = () => { try { localStorage.setItem('gym2', JSON.stringify(S)); } catch {} };
+
+// Plan files (plans/<name>.json): { "name": "...", "days": { "Monday": [{ "session": "Push", "time": "07:00", "activities": [["Bench press", "4 × 8"], "Stretch"] }] } }
+// "time" is optional; an activity is a name or [name, detail].
+function parsePlan(p) {
+  const plan = {};
+  for (const [day, sessions] of Object.entries(p.days || {})) {
+    const d = day.length >= 3 ? DAYS.findIndex(n => n.toLowerCase().startsWith(day.toLowerCase().slice(0,3))) : -1;
+    if (d < 0 || !Array.isArray(sessions)) throw Error(`Bad day: ${day}`);
+    plan[d] = sessions.map(s => session(String(s.session || ''), /^\d\d:\d\d$/.test(s.time) ? s.time : '',
+      (s.activities || []).map(a => act(...[].concat(a).map(String)))));
+  }
+  return plan;
+}
+async function loadPlanFromLink() {
+  const name = new URLSearchParams(location.search).get('plan');
+  if (!name) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const res = await fetch(`plans/${encodeURIComponent(name)}.json`); // only files from this site's plans folder
+    if (!res.ok) throw Error(res.status);
+    const p = await res.json(), plan = parsePlan(p);
+    if (!confirm(`Load "${p.name || name}"?\n\nThis replaces your current plan.`)) return;
+    S.plan = plan; save(); view = 'today'; render();
+  } catch { alert(`Couldn't load the plan "${name}".`); }
+}
 
 const sessionsOn = (s, d) => s.plan[d.getDay()] || [];
 const doneIn = (s, d, items) => items.filter(i => (s.done[key(d)] || []).includes(i.id)).length;
@@ -241,7 +267,9 @@ function renderPlan() {
   $('editor').replaceChildren(...list.map(x => el('div', { className: 'card' },
     el('div', { className: 'row' },
       input(x, 'name', { className: 'field big', placeholder: 'Session name', maxLength: 40 }),
-      input(x, 'time', { type: 'time', title: 'Reminder time' }),
+      ...(x.time
+        ? [input(x, 'time', { type: 'time', title: 'Reminder time', required: true }), remove('Remove time', 'clockOff', () => x.time = '')]
+        : [el('button', { className: 'add', type: 'button', title: 'Add a time and reminder', onclick: () => { x.time = '07:00'; save(); render(); } }, icon('clock'), 'Time')]),
       remove(`Delete session ${x.name}`, 'trash', () => list.splice(list.indexOf(x), 1))),
     el('ul', { style: 'margin-top:10px;gap:6px' }, ...x.items.map(it => el('li', { className: 'act' },
       input(it, 'name', { placeholder: 'Activity', maxLength: 60 }),
@@ -299,9 +327,13 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
   console.assert(dueSessions(s, d).length === 1, 'reminder due');
   console.assert(!dueSessions({ ...s, plan: { 1: [{ ...x, time: '09:00' }] } }, d).length, 'not yet due');
   console.assert(!dueSessions({ ...s, done: { '2026-10-19': ['a'] } }, d).length, 'skip when done');
-  console.assert(!dueSessions({ ...s, notified: { '2026-10-19': ['s'] } }, d).length, 'only once a day'); }
+  console.assert(!dueSessions({ ...s, notified: { '2026-10-19': ['s'] } }, d).length, 'only once a day');
+  console.assert(!dueSessions({ ...s, plan: { 1: [{ ...x, time: '' }] } }, d).length, 'no time, no reminder');
+  const p = parsePlan({ days: { Mon: [{ session: 'A', time: '6pm', activities: ['Run', ['Squat', '5 × 5']] }], sunday: [] } });
+  console.assert(p[1][0].time === '' && p[1][0].items[1].detail === '5 × 5' && p[0].length === 0, 'parsePlan');
+  try { parsePlan({ days: { Funday: [] } }); console.assert(false, 'bad day rejected'); } catch {} }
 
-render(); checkReminders();
+render(); checkReminders(); loadPlanFromLink();
 </script>
 </body>
 </html>

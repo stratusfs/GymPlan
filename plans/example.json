@@ -1,0 +1,18 @@
+{
+  "name": "Example 3-day split",
+  "days": {
+    "Monday": [
+      { "session": "Push", "time": "07:00", "activities": [["Bench press", "4 × 8"], ["Overhead press", "3 × 10"], ["Tricep dips", "3 × 12"]] }
+    ],
+    "Wednesday": [
+      { "session": "Legs", "time": "07:00", "activities": [["Squat", "4 × 6"], ["Romanian deadlift", "3 × 10"], ["Walking lunges", "3 × 12"]] },
+      { "session": "Cardio", "activities": [["Run", "5 km"]] }
+    ],
+    "Friday": [
+      { "session": "Pull", "time": "07:00", "activities": [["Pull-ups", "4 × max"], ["Barbell row", "4 × 8"], ["Bicep curls", "3 × 12"]] }
+    ],
+    "Sunday": [
+      { "session": "Recovery", "activities": ["Stretching", ["Walk", "30 min"]] }
+    ]
+  }
+}
