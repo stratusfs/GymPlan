@@ -34,7 +34,9 @@
   h2 { font-size:18px; display:flex; align-items:center; gap:8px; }
   .sub, .mute { color:var(--mute); }
   .sub { margin-top:2px; }
-  button, input { font:inherit; color:inherit; }
+  button, input, textarea { font:inherit; color:inherit; }
+  textarea.field { resize:vertical; line-height:1.5; }
+  label.btn { cursor:pointer; }
   button { cursor:pointer; border:0; background:none; }
 
   .ic { display:inline-flex; flex:none; }
@@ -79,7 +81,11 @@
             mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/contain no-repeat; }
 
   .empty { display:grid; justify-items:center; gap:10px; text-align:center; color:var(--mute); padding:48px 0; }
-  .chips { display:flex; gap:6px; overflow-x:auto; margin:20px 0; padding:2px 2px 6px; }
+  /* runs to the screen edges and fades out on whichever side has more to scroll (--l/--r set by fadeEdges) */
+  .chips { display:flex; gap:6px; overflow-x:auto; margin:20px -16px; padding:2px 16px 6px; scrollbar-width:none; --l:0px; --r:0px;
+           -webkit-mask-image:linear-gradient(90deg,transparent,#000 var(--l),#000 calc(100% - var(--r)),transparent);
+                   mask-image:linear-gradient(90deg,transparent,#000 var(--l),#000 calc(100% - var(--r)),transparent); }
+  .chips::-webkit-scrollbar { display:none; }
   .chips button { border-radius:999px; padding:8px 14px; white-space:nowrap; }
   .chips .on { background:var(--grad); color:#06210a; border-color:transparent; font-weight:700; }
   .chips sup { opacity:.7; margin-left:3px; }
@@ -129,6 +135,16 @@
     <div id="editor"></div>
     <button class="btn" id="addSession" type="button">Add session</button>
     <div class="card" style="margin-top:12px">
+      <h2 id="importTitle">Import plan</h2>
+      <p class="note" style="margin:4px 0 10px">Paste a plan like the example, or choose a .txt or .json file. Days on their own line, then sessions (add <b>@ 07:00</b> for a reminder), then activities starting with <b>-</b> (put sets/reps after <b>|</b>). This replaces your current plan.</p>
+      <textarea class="field" id="importText" rows="8" placeholder="Monday&#10;Upper A @ 07:00&#10;- Bench press | 3 × 6–10&#10;- Lat pulldown | 3 × 8–12&#10;&#10;Wednesday&#10;Legs&#10;- Squat | 4 × 6&#10;- Plank | 3 × 30 sec"></textarea>
+      <p class="err" id="importErr" style="margin-top:8px"></p>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="importBtn" type="button">Import</button>
+        <label class="btn ghost" id="importFile">Choose file<input type="file" accept=".txt,.json,text/plain,application/json" hidden></label>
+      </div>
+    </div>
+    <div class="card" style="margin-top:12px">
       <button class="btn ghost" id="notifyBtn" type="button"></button>
       <p class="note">Each session with a time sends a reminder then, unless it's already done. Works while the app is open or in the background. On iPhone, tap Share → Add to Home Screen first.</p>
     </div>
@@ -162,6 +178,7 @@ const ICONS = {
   bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
   bellOff: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/>',
   calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+  upload: '<path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>',
   user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   logOut: '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
   edit: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
@@ -216,6 +233,41 @@ function parsePlan(p) {
   }
   return plan;
 }
+// Text format, turned into the JSON shape above:
+//   Monday            <- a day (full or 3-letter name)
+//   Upper A @ 07:00   <- a session, time optional
+//   - Bench press | 3 × 8   <- an activity, detail after | optional
+function textToPlan(text) {
+  const days = {};
+  let day = null, sess = null;
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) return;
+    const word = line.replace(/:$/, '').toLowerCase();
+    const full = DAYS.find(n => n.toLowerCase() === word || n.slice(0,3).toLowerCase() === word);
+    if (full) { day = days[full] ||= []; sess = null; return; }
+    if (!day) throw Error(`Line ${i + 1}: start with a day, like "Monday".`);
+    if (/^[-•*]/.test(line)) {
+      const [name, ...detail] = line.replace(/^[-•*]\s*/, '').split('|');
+      if (!sess) day.push(sess = { session: 'Workout', activities: [] });
+      sess.activities.push([name.trim(), detail.join('|').trim()]);
+      return;
+    }
+    const m = line.match(/^(.*?)\s*(?:@\s*(\d{1,2}:\d\d))?$/);
+    day.push(sess = { session: m[1], time: m[2]?.padStart(5, '0'), activities: [] });
+  });
+  return { days };
+}
+function usePlan(plan, label) {
+  if (!Object.values(plan).flat().length) throw Error('There are no sessions in that plan.');
+  if (!confirm(`Load ${label}?\n\nThis replaces your current plan.`)) return false;
+  S.plan = plan; save(); view = 'today'; sel = new Date(); render();
+  return true;
+}
+function importText(text) {
+  const p = text.trim().startsWith('{') ? JSON.parse(text) : textToPlan(text);
+  return usePlan(parsePlan(p), p.name ? `"${p.name}"` : 'this plan');
+}
 async function loadPlanFromLink() {
   const name = new URLSearchParams(location.search).get('plan');
   if (!name) return;
@@ -223,9 +275,8 @@ async function loadPlanFromLink() {
   try {
     const res = await fetch(`plans/${encodeURIComponent(name)}.json`); // only files from this site's plans folder
     if (!res.ok) throw Error(res.status);
-    const p = await res.json(), plan = parsePlan(p);
-    if (!confirm(`Load "${p.name || name}"?\n\nThis replaces your current plan.`)) return;
-    S.plan = plan; save(); view = 'today'; render();
+    const p = await res.json();
+    usePlan(parsePlan(p), `"${p.name || name}"`);
   } catch { alert(`Couldn't load the plan "${name}".`); }
 }
 
@@ -297,6 +348,7 @@ function renderPlan() {
   $('chips').replaceChildren(...ORDER.map(d => el('button', {
     className: d === planDay ? 'on' : '', onclick: () => { planDay = d; render(); } },
     DAYS[d].slice(0,3), el('sup', { textContent: (S.plan[d] || []).length || '' }))));
+  fadeEdges();
 
   const list = S.plan[planDay] ||= [];
   $('editor').replaceChildren(...list.map(x => el('div', { className: 'card' },
@@ -367,6 +419,25 @@ $('addSession').onclick = () => {
   (S.plan[planDay] ||= []).push(session('', '', [act('')])); save(); render();
   [...$('editor').querySelectorAll('.big')].pop()?.focus();
 };
+function fadeEdges() {
+  const c = $('chips');
+  c.style.setProperty('--l', c.scrollLeft > 2 ? '36px' : '0px');
+  c.style.setProperty('--r', c.scrollLeft + c.clientWidth < c.scrollWidth - 2 ? '36px' : '0px');
+}
+$('chips').onscroll = fadeEdges;
+addEventListener('resize', fadeEdges);
+const tryImport = text => {
+  $('importErr').textContent = '';
+  try { if (importText(text)) $('importText').value = ''; }
+  catch (e) { $('importErr').textContent = e instanceof SyntaxError ? 'That file isn’t valid JSON.' : e.message; }
+};
+$('importBtn').onclick = () => tryImport($('importText').value);
+$('importFile').querySelector('input').onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (file) tryImport(file.size > 256 * 1024 ? '' : await file.text());
+};
+$('importTitle').prepend(icon('upload'));
 $('notifyBtn').onclick = async () => { await Notification.requestPermission(); render(); };
 
 // shortcut: reminders are checked by the open/backgrounded page; for alerts when the app is fully closed, add a Web Push server.
@@ -395,7 +466,11 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
   console.assert(!dueSessions({ ...s, plan: { 1: [{ ...x, time: '' }] } }, d).length, 'no time, no reminder');
   const p = parsePlan({ days: { Mon: [{ session: 'A', time: '6pm', activities: ['Run', ['Squat', '5 × 5']] }], sunday: [] } });
   console.assert(p[1][0].time === '' && p[1][0].items[1].detail === '5 × 5' && p[0].length === 0, 'parsePlan');
-  try { parsePlan({ days: { Funday: [] } }); console.assert(false, 'bad day rejected'); } catch {} }
+  try { parsePlan({ days: { Funday: [] } }); console.assert(false, 'bad day rejected'); } catch {}
+  const t = parsePlan(textToPlan('Monday:\nUpper A @ 7:00\n- Bench | 3 × 8\n- Plank\nTue\n- Run | 5 km\nmon\nCardio'));
+  console.assert(t[1].length === 2 && t[1][0].time === '07:00' && t[1][0].items[0].detail === '3 × 8' && t[1][0].items[1].detail === '', 'text: sessions');
+  console.assert(t[2][0].name === 'Workout' && t[2][0].items[0].name === 'Run' && t[1][1].time === '', 'text: default session, no time');
+  try { textToPlan('- Squat'); console.assert(false, 'activity before a day rejected'); } catch {} }
 
 render(); checkReminders(); loadPlanFromLink().then(() => sync());
 </script>
