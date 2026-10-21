@@ -172,12 +172,7 @@ const icon = (name, cls = '') => el('span', { className: `ic ${cls}`,
 // Plan shape: { plan: { [weekday 0-6]: [session{ id, name, time, items:[activity{ id, name, detail }] }] }, done: { date: [activityId] }, notified: { date: [sessionId] } }
 let S;
 try { S = JSON.parse(localStorage.getItem('gym2')); } catch {}
-S ||= { plan: {
-  1: [session('Push', '07:00', [act('Bench press','4 × 8'), act('Overhead press','3 × 10'), act('Tricep dips','3 × 12')])],
-  3: [session('Legs', '07:00', [act('Squat','4 × 6'), act('Romanian deadlift','3 × 10'), act('Walking lunges','3 × 12')]),
-      session('Cardio', '18:00', [act('Run','5 km')])],
-  5: [session('Pull', '07:00', [act('Pull-ups','4 × max'), act('Barbell row','4 × 8'), act('Bicep curls','3 × 12')])],
-}, done: {}, notified: {} };
+S ||= { plan: {}, done: {}, notified: {} };
 const store = () => { try { localStorage.setItem('gym2', JSON.stringify(S)); } catch {} };
 const save = () => { S.updated = Date.now(); store(); schedulePush(); };
 
@@ -265,6 +260,8 @@ function renderToday() {
   }));
 
   const k = key(sel), sessions = sessionsOn(S, sel).filter(x => x.items.length);
+  if (!Object.values(S.plan).flat().length) return $('sessions').replaceChildren(el('div', { className: 'empty' }, icon('edit', 'big'), 'No plan yet.',
+    el('button', { className: 'btn', type: 'button', style: 'width:auto', onclick: () => $('navPlan').click() }, icon('plus'), 'Make your plan')));
   if (!sessions.length) return $('sessions').replaceChildren(el('div', { className: 'empty' }, icon('moon', 'big'), 'Rest day. Recover well.'));
   $('sessions').replaceChildren(...sessions.map(x => {
     const n = doneIn(S, sel, x.items), complete = n === x.items.length;
