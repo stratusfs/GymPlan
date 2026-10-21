@@ -1,0 +1,47 @@
+{
+  "name": "Home gym 4-day strength plan",
+  "days": {
+    "Monday": [
+      { "session": "Upper A", "activities": [
+        ["Barbell bench press", "3 × 6–10 · safety catches + spotter"],
+        ["Lat pulldown", "3 × 8–12 · high pulley, no swinging"],
+        ["Incline dumbbell press", "3 × 8–12 · slight incline"],
+        ["Cable row", "3 × 8–12 · or one-arm DB rows"],
+        ["Cable triceps pushdown", "2 × 10–15 · elbows in"],
+        ["Dumbbell biceps curls", "2 × 10–15 · lower slowly"]
+      ] }
+    ],
+    "Wednesday": [
+      { "session": "Lower A", "activities": [
+        ["Goblet squat", "3 × 8–12"],
+        ["Dumbbell Romanian deadlift", "3 × 8–12 · neutral back, start light"],
+        ["Reverse lunges", "2 × 8 each leg"],
+        ["Standing calf raises", "3 × 12–20"],
+        ["Plank", "3 × 30–45 sec"]
+      ] }
+    ],
+    "Thursday": [
+      { "session": "Basketball", "activities": [["Basketball", "No extra weights needed"]] }
+    ],
+    "Friday": [
+      { "session": "Upper B", "activities": [
+        ["One-arm dumbbell row", "3 × 8–12 each side"],
+        ["Flat dumbbell press", "3 × 8–12"],
+        ["Dumbbell lateral raises", "3 × 12–15 · light, no shrugging"],
+        ["Cable face pulls", "2 × 12–15 · optional, skip if pulley can't go to face height"],
+        ["Dumbbell hammer curls", "3 × 10–12"],
+        ["Overhead dumbbell triceps extension", "2 × 10–15 · start light"]
+      ] }
+    ],
+    "Sunday": [
+      { "session": "Lower B + core", "activities": [
+        ["Dumbbell Romanian deadlift", "3 × 8–12 · light to moderate"],
+        ["Split squats", "3 × 8 each leg"],
+        ["Hip thrust", "3 × 10–15"],
+        ["Standing calf raises", "3 × 12–20 · pause at top"],
+        ["Dead bugs", "3 × 8–12 each side"],
+        ["Side plank", "2 × 20–40 sec each side"]
+      ] }
+    ]
+  }
+}
