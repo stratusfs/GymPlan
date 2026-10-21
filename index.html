@@ -101,6 +101,12 @@
   .btn.ghost { color:var(--text); }
   .btn:disabled { opacity:.65; cursor:default; }
   .note { color:var(--mute); font-size:13px; margin-top:10px; }
+  .auth { display:grid; gap:8px; }
+  .auth .note { margin:0 0 4px; }
+  .err { color:var(--danger); font-size:14px; }
+  .err:empty { display:none; }
+  .who { flex:1; min-width:0; }
+  .who div:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
 
   nav { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(env(safe-area-inset-bottom) + 14px); width:min(340px, calc(100% - 32px));
         display:flex; gap:6px; padding:6px; border-radius:24px; z-index:5; }
@@ -126,6 +132,7 @@
       <button class="btn ghost" id="notifyBtn" type="button"></button>
       <p class="note">Each session with a time sends a reminder then, unless it's already done. Works while the app is open or in the background. On iPhone, tap Share → Add to Home Screen first.</p>
     </div>
+    <div class="card" id="account"></div>
   </section>
 </div>
 
@@ -155,6 +162,8 @@ const ICONS = {
   bell: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
   bellOff: '<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/>',
   calendar: '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
+  user: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  logOut: '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
   edit: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
 };
 const icon = (name, cls = '') => el('span', { className: `ic ${cls}`,
@@ -169,7 +178,36 @@ S ||= { plan: {
       session('Cardio', '18:00', [act('Run','5 km')])],
   5: [session('Pull', '07:00', [act('Pull-ups','4 × max'), act('Barbell row','4 × 8'), act('Bicep curls','3 × 12')])],
 }, done: {}, notified: {} };
-const save = () => { try { localStorage.setItem('gym2', JSON.stringify(S)); } catch {} };
+const store = () => { try { localStorage.setItem('gym2', JSON.stringify(S)); } catch {} };
+const save = () => { S.updated = Date.now(); store(); schedulePush(); };
+
+// ---------- Account sync (server code in api/worker.js). The most recent save wins between devices. ----------
+const API = 'https://gymplan-api.tylerpreston21not.workers.dev';
+let auth = null, authError = '', pushTimer;
+try { auth = JSON.parse(localStorage.getItem('gymAuth')); } catch {}
+const setAuth = a => { auth = a; try { a ? localStorage.setItem('gymAuth', JSON.stringify(a)) : localStorage.removeItem('gymAuth'); } catch {} };
+
+async function api(path, options = {}) {
+  const res = await fetch(API + path, { ...options, headers: { 'Content-Type': 'application/json', ...(auth && { Authorization: `Bearer ${auth.token}` }) } });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401 && auth) { setAuth(null); authError = 'You were signed out. Please sign in again.'; render(); }
+  if (!res.ok) throw Error(body.error || 'Couldn’t reach the server. Check your connection.');
+  return body;
+}
+function schedulePush() { if (auth) { clearTimeout(pushTimer); pushTimer = setTimeout(push, 800); } }
+async function push() {
+  S.updated ||= Date.now();
+  try { await api('/data', { method: 'PUT', body: JSON.stringify(S) }); } catch {} // offline: the next sync() retries
+}
+// preferServer: right after signing in, the account's saved plan replaces whatever is on this device.
+async function sync(preferServer = false) {
+  if (!auth) return;
+  try {
+    const { data, updated } = await api('/data');
+    if (data && (preferServer || updated > (S.updated || 0))) { S = { done: {}, notified: {}, ...data }; store(); render(); }
+    else if (!data || (S.updated || 0) > updated) await push();
+  } catch {}
+}
 
 // Plan files (plans/<name>.json): { "name": "...", "days": { "Monday": [{ "session": "Push", "time": "07:00", "activities": [["Bench press", "4 × 8"], "Stretch"] }] } }
 // "time" is optional; an activity is a name or [name, detail].
@@ -286,6 +324,34 @@ function renderPlan() {
                         unsupported: ['bellOff', 'Notifications not supported here'] }[p] || ['bell', 'Turn on notifications'];
   $('notifyBtn').replaceChildren(icon(ic), label);
   $('notifyBtn').disabled = p !== 'default';
+  renderAccount();
+}
+
+function renderAccount() {
+  if (auth) return $('account').replaceChildren(el('div', { className: 'row' }, icon('user'),
+    el('div', { className: 'who' }, el('div', { textContent: auth.email }), el('div', { className: 'mute', style: 'font-size:13px', textContent: 'Your plan is saved to your account' })),
+    el('button', { className: 'btn ghost', type: 'button', style: 'width:auto', onclick: async () => {
+      try { await api('/logout', { method: 'POST' }); } catch {}
+      setAuth(null); render(); // the plan stays on this device
+    } }, icon('logOut'), 'Sign out')));
+
+  const email = el('input', { className: 'field', type: 'email', autocomplete: 'username', placeholder: 'Email', required: true, maxLength: 200 });
+  const password = el('input', { className: 'field', type: 'password', autocomplete: 'current-password', placeholder: 'Password (8+ characters)', required: true, minLength: 8, maxLength: 200 });
+  const msg = el('p', { className: 'err', textContent: authError });
+  const go = async path => {
+    if (!email.reportValidity() || !password.reportValidity()) return;
+    msg.className = 'note'; msg.textContent = path === '/signup' ? 'Creating account…' : 'Signing in…';
+    try {
+      setAuth(await api(path, { method: 'POST', body: JSON.stringify({ email: email.value, password: password.value }) }));
+      authError = ''; render(); await sync(true);
+    } catch (e) { msg.className = 'err'; msg.textContent = e.message; }
+  };
+  $('account').replaceChildren(el('form', { className: 'auth', onsubmit: e => { e.preventDefault(); go('/login'); } },
+    el('h2', {}, icon('user'), 'Account'),
+    el('p', { className: 'note', textContent: 'Sign in to save your plan and use it on any device. Optional — the app works without it.' }),
+    email, password, msg,
+    el('div', { className: 'row' }, el('button', { className: 'btn' }, 'Sign in'),
+      el('button', { className: 'btn ghost', type: 'button', onclick: () => go('/signup') }, 'Create account'))));
 }
 
 function render() {
@@ -318,7 +384,8 @@ async function checkReminders() {
   }
 }
 setInterval(checkReminders, 30000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); if (view === 'today') render(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); if (view === 'today') render(); sync(); } });
+addEventListener('online', () => sync());
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js');
 
 // self-check (19 Oct 2026 is a Monday)
@@ -333,7 +400,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) naviga
   console.assert(p[1][0].time === '' && p[1][0].items[1].detail === '5 × 5' && p[0].length === 0, 'parsePlan');
   try { parsePlan({ days: { Funday: [] } }); console.assert(false, 'bad day rejected'); } catch {} }
 
-render(); checkReminders(); loadPlanFromLink();
+render(); checkReminders(); loadPlanFromLink().then(() => sync());
 </script>
 </body>
 </html>

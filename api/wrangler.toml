@@ -1,0 +1,8 @@
+name = "gymplan-api"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gymplan"
+database_id = "0875c066-801d-48a0-8ab2-8da25b2f08de"
